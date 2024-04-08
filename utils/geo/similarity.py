@@ -3,6 +3,7 @@ from geopandas import (
     GeoSeries,
 )
 from pandas import (
+    Series,
     concat,
 )
 
@@ -168,7 +169,7 @@ def __row_similarity(
     return gdf
 
 def similarity(
-    gdf:GeoDataFrame,
+    gdf:Series|GeoSeries|GeoDataFrame,
     other:GeoSeries|GeoDataFrame,
     left_key_col:str=None,
     right_key_col:str=None,
@@ -179,7 +180,8 @@ def similarity(
     Calcula a similaridade entre um GeoDataFrame (representando um conjunto de geometrias) e outro GeoSeries ou GeoDataFrame.
 
     Parâmetros:
-    - gdf (GeoDataFrame): Um GeoDataFrame representando o conjunto de geometrias para o qual a similaridade será calculada.
+    - gdf (Series, GeoSeries ou GeoDataFrame): Uma Series ou GeoSeries representando uma geometria para a qual as propriedades de interseção serão calculadas.
+                                               Ou um GeoDataFrame representando o conjunto de geometrias para o qual a similaridade será calculada.
     - other (GeoSeries ou GeoDataFrame): Uma GeoSeries ou GeoDataFrame representando as geometrias com as quais 'gdf' será comparado.
     - left_key_col (str, opcional): Nome da coluna em 'row' representando o valor da chave. O padrão é None.
     - right_key_col (str, opcional): Nome da coluna em 'other' representando o valor da chave. O padrão é None.
@@ -201,6 +203,9 @@ def similarity(
     - Se 'method' for 'intersection', a similaridade é calculada pela interseção entre a geometrias de row e other.
     - Se 'difference', primeiro é calculada a diferença das geometrias de row e other e a similaridade é caculada como 1 - diferença.area/row.geometry.area.
     """
+    if isinstance(gdf, GeoSeries) or isinstance(gdf, Series):
+        return __row_similarity(gdf, other[[right_key_col, 'geometry']], left_key_col, right_key_col, only_intersections, method)
+    
     sim_gdf = gdf.copy()
     sim_gdf = sim_gdf.apply(lambda x: __row_similarity(x, other[[right_key_col, 'geometry']], left_key_col, right_key_col, only_intersections, method), axis=1)
     sim_gdf = concat(sim_gdf.values)
