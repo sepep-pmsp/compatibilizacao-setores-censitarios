@@ -7,6 +7,14 @@ from logging import (
     Logger,
     getLogger,
 )
+from os.path import (
+    exists,
+    join,
+    basename,
+)
+from os import makedirs
+from urllib.parse import urlparse
+from urllib.request import urlretrieve
 
 class Censo(Enum):
    CENSO_2010=2010
@@ -45,7 +53,7 @@ def get_malha_url(censo:Censo, nivel:Nivel) -> str:
             sufixo = ''
         return f'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2022/Agregados_por_Setores_Censitarios_preliminares/malha_com_atributos/{nivel_str}/json/UF/SP/SP_Malha_Preliminar{sufixo}_2022.zip'
 
-def download_malha(censo:Censo, nivel:Nivel, filtro:str=None, logger:Logger=getLogger(), **kwargs) -> GeoDataFrame:
+def download_malha(censo:Censo, nivel:Nivel, filtro:str=None, logger:Logger=getLogger(), cache_dir:str='data/cache/', **kwargs) -> GeoDataFrame:
     """
     Baixa a malha no nível especificado para o censo escolhido. Os parâmetros enviados via kwargs são enviados ao método read_file do Geopandas.
 
@@ -73,8 +81,19 @@ def download_malha(censo:Censo, nivel:Nivel, filtro:str=None, logger:Logger=getL
     """
     url = get_malha_url(censo, nivel)
 
-    logger.info(f'Baixando a malha de {nivel.value} do censo de {censo.value} de {url}.')
-    gdf = read_file(url, **kwargs)
+    parsed_url = urlparse(url)
+    filename = basename(parsed_url.path)
+    file_dir =join(cache_dir, nivel.value, str(censo.value))
+    file_path = join(file_dir, filename)
+
+    if not exists(file_path):
+        logger.info(f'Baixando a malha de {nivel.value} do censo de {censo.value} de {url}.')
+        makedirs(file_dir, exist_ok=True)
+        urlretrieve(url, file_path)
+    else:
+        logger.info(f'O arquivo {file_path} já foi baixado anteriormente. Usando cache local.')
+
+    gdf = read_file(file_path, **kwargs)
 
     if filtro:
         gdf = gdf.query(filtro)
