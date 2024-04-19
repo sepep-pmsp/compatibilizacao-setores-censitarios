@@ -166,6 +166,10 @@ def __row_similarity(
     if left_key_col:
         gdf.insert(0, left_key_col, row[left_key_col])
 
+    # Reponderando as interseções para o somatório ser igual a 1
+    inter_total = gdf['inter_perc'].sum()
+    gdf['inter_perc'] = gdf['inter_perc']/inter_total
+
     return gdf
 
 def similarity(
