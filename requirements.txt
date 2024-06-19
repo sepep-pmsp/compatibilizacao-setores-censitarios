@@ -6,5 +6,6 @@ matplotlib==3.8.3
 pandas[excel]==2.2.1
 pyarrow==15.0.2
 seaborn==0.13.2
+statsmodels==0.14.2
 tenacity==8.2.3
 xmltodict==0.13.0
