@@ -16,9 +16,17 @@ from os.path import (
     join,
     basename,
 )
-from os import makedirs
+from os import (
+    makedirs,
+    rename,
+)
 from urllib.parse import urlparse
-from urllib.request import urlretrieve
+from urllib.request import (
+    build_opener,
+    install_opener,
+    urlretrieve,
+)
+from http.client import HTTPMessage
 from zipfile import ZipFile
 
 class Censo(Enum):
@@ -29,10 +37,54 @@ class Nivel(Enum):
    DISTRITOS='distritos'
    SETORES='setores'
 
+GEOSAMPA_DOMAIN = 'http://download.geosampa.prefeitura.sp.gov.br/'
+NAMESPACE = 'PaginasPublicas/'
+ENDPOINT = 'downloadArquivo.aspx'
+
+class UrlBuilder:
+    '''Builds url for shapefiles request.'''
+
+
+    def __init__(self, domain: str):
+
+        self.domain = self.slash_ending(domain)
+
+    def slash_ending(self, slug : str)->str:
+
+        if not slug.endswith('/'):
+            slug = slug + '/'
+
+        return slug
+
+    def build_params(self, params: dict)->str:
+    
+        params = [f'{key}={val}' for key, val in params.items()]
+        
+        params = '&'.join(params)
+        
+        return '?'+params
+
+
+    def build_url(self, namespace: str, endpoint: str, **params)->str:
+        
+        #apenas o namespace precisa de slash, o endpoint nao
+        namespace = self.slash_ending(namespace)
+
+        url = self.domain + namespace + endpoint
+        
+        if params:
+            params = self.build_params(params)
+            url = url + params
+        
+        return url
+
+    def __call__(self, namespace, endpoint, **params):
+
+        return self.build_url(namespace, endpoint, **params)
+
 def __prepare_cache(url:str, file_dir:str, logger:Logger=getLogger()) -> str:
 
-    parsed_url = urlparse(url)
-    filename = basename(parsed_url.path)
+    filename = __get_url_filename(url)
     file_path = join(file_dir, filename)
 
     if not exists(file_path):
@@ -43,6 +95,37 @@ def __prepare_cache(url:str, file_dir:str, logger:Logger=getLogger()) -> str:
         logger.info(f'O arquivo {file_path} já foi baixado anteriormente. Usando cache local.')
 
     return file_path
+
+def __get_url_filename(url:str) -> str:
+    opener = build_opener()
+    opener.addheaders = [('Range', '0-0')]
+    install_opener(opener)
+
+    fpath, headers = urlretrieve(url)
+
+    if __get_atachment_filename(headers):
+        return __get_atachment_filename(headers)
+    
+    parsed_url = urlparse(url)
+    return basename(parsed_url.path)
+
+def __get_atachment_filename(headers:HTTPMessage) -> str:
+    if 'Content-Disposition' in headers:
+        cdisp = headers.get('Content-Disposition')
+        if 'filename' in cdisp:
+            return cdisp.split('filename=')[1].replace('"', '')
+
+def get_shapefile_url(filename:str) -> str:
+    build_url = UrlBuilder(GEOSAMPA_DOMAIN)
+    url = build_url(
+        namespace=NAMESPACE,
+        endpoint=ENDPOINT,
+        orig='DownloadCamadas',
+        arq=filename,
+        arqTipo='Shapefile'
+    )
+
+    return url
 
 def get_malha_url(censo:Censo, nivel:Nivel) -> str:
     """
@@ -136,3 +219,8 @@ def download_dados(censo:Censo, nivel:Nivel, arquivo:str=None, filtro:str=None, 
         df = df.query(filtro)
 
     return df
+
+def download_geosampa_shapefile(filename:str) -> str:
+    url = get_shapefile_url(filename)
+    file_path = __prepare_cache(url, 'data/cache/geosampa_shp')
+    return file_path
