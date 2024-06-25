@@ -30,12 +30,13 @@ from http.client import HTTPMessage
 from zipfile import ZipFile
 
 class Censo(Enum):
-   CENSO_2010=2010
-   CENSO_2022=2022
+   CENSO_2000:int=2000
+   CENSO_2010:int=2010
+   CENSO_2022:int=2022
 
 class Nivel(Enum):
-   DISTRITOS='distritos'
-   SETORES='setores'
+   DISTRITOS:str='distritos'
+   SETORES:str='setores'
 
 GEOSAMPA_DOMAIN = 'http://download.geosampa.prefeitura.sp.gov.br/'
 NAMESPACE = 'PaginasPublicas/'
@@ -144,6 +145,10 @@ def get_malha_url(censo:Censo, nivel:Nivel) -> str:
         A URL do arquivo georreferenciado escolhido.
     """
     nivel_str = nivel.value
+    if censo == Censo.CENSO_2000:
+        if nivel == Nivel.SETORES:
+            return f'https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais/malhas_de_setores_censitarios__divisoes_intramunicipais/censo_2000/setor_urbano/sp/3550308/3550308.zip'
+    
     if censo == Censo.CENSO_2010:
         if nivel == Nivel.SETORES:
             nivel_str ='setores_censitarios'
@@ -195,6 +200,9 @@ def download_malha(censo:Censo, nivel:Nivel, filtro:str=None, logger:Logger=getL
     return gdf
 
 def get_dados_url(censo:Censo, nivel:Nivel) -> str:
+    if censo == Censo.CENSO_2000:
+        if nivel == Nivel.SETORES:
+            return 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2000/Dados_do_Universo/Agregado_por_Setores_Censitarios/Agregado_de_setores_2000_SP_RM.zip'
     if censo == Censo.CENSO_2010:
         if nivel == Nivel.SETORES:
             return 'https://ftp.ibge.gov.br/Censos/Censo_Demografico_2010/Resultados_do_Universo/Agregados_por_Setores_Censitarios/SP_Capital_20231030.zip'
@@ -203,10 +211,14 @@ def get_dados_url(censo:Censo, nivel:Nivel) -> str:
 def download_dados(censo:Censo, nivel:Nivel, arquivo:str=None, filtro:str=None, logger:Logger=getLogger(), cache_dir:str='data/cache/', **kwargs) -> DataFrame:
     url = get_dados_url(censo, nivel)
     file_dir =join(cache_dir, nivel.value, str(censo.value))
-    logger.info(f'Carregando a malha de {nivel.value} do censo de {censo.value}.')
+    logger.info(f'Carregando os dados de {nivel.value} do censo de {censo.value}.')
     file_path = __prepare_cache(url, file_dir, logger=logger)
 
     df = None
+    if censo == Censo.CENSO_2000 and arquivo != None:
+        with ZipFile(file_path, metadata_encoding='IBM850') as z:
+            with z.open(f'São Paulo1/{arquivo}') as f:
+                df = read_excel(f, thousands='.', decimal=',', dtype={'Cod_setor': str})
     if censo == Censo.CENSO_2010 and arquivo != None:
         with ZipFile(file_path) as z:
             with z.open(f'Base informaçoes setores2010 universo SP_Capital/EXCEL/{arquivo}') as f:
