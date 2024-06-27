@@ -1,6 +1,7 @@
 from geopandas import (
     GeoDataFrame,
     GeoSeries,
+    overlay,
 )
 from pandas import (
     Series,
@@ -172,13 +173,62 @@ def __row_similarity(
 
     return gdf
 
+def __overlay_similarity(
+    gdf:Series|GeoSeries|GeoDataFrame,
+    other:GeoSeries|GeoDataFrame,
+    left_key_col:str=None,
+    right_key_col:str=None,
+    min_intersection_radius:int=10
+):
+    gdf = __standartize_gdf(gdf, left_key_col)
+    other = __standartize_gdf(other, right_key_col)
+        
+    ## Caculate overlay between sets using overlay
+    overlay_df = overlay(
+        gdf,
+        other,
+        how='intersection',
+        keep_geom_type=True,
+    )
+
+    ## Remove despicable geometries
+    overlay_df = overlay_df.explode(index_parts=False)
+    overlay_df['debuffed'] = overlay_df.buffer(-min_intersection_radius**(1/2))
+    overlay_df = overlay_df[overlay_df['debuffed'].is_empty == False]
+    overlay_df = overlay_df.drop(columns='debuffed')
+    overlay_df = overlay_df.dissolve([left_key_col, right_key_col], as_index=False)
+
+    ## Calculate inter_area
+    overlay_df['inter_area'] = overlay_df['geometry'].area
+
+    ## Calculate total_weighted_area
+    overlay_df = overlay_df.merge(
+        overlay_df
+        [[left_key_col, 'inter_area']]
+        .groupby(left_key_col)
+        .sum()
+        .reset_index()
+        .rename(columns={'inter_area': 'setor_weighted_area'})
+    )
+
+    ## Caculate inter_perc
+    overlay_df['inter_perc'] = \
+            overlay_df['inter_area']/overlay_df['setor_weighted_area']
+
+    ## Remove total_weighted_area
+    overlay_df = overlay_df.drop(columns=['setor_weighted_area'])
+
+    ## return DataFrame
+    return overlay_df
+
 def similarity(
     gdf:Series|GeoSeries|GeoDataFrame,
     other:GeoSeries|GeoDataFrame,
     left_key_col:str=None,
     right_key_col:str=None,
     only_intersections:bool=True,
-    method:str='intersection'
+    method:str='intersection',
+    min_intersection_radius:int=10
 ) -> GeoDataFrame:
     """
     Calcula a similaridade entre um GeoDataFrame (representando um conjunto de geometrias) e outro GeoSeries ou GeoDataFrame.
@@ -190,8 +240,11 @@ def similarity(
     - left_key_col (str, opcional): Nome da coluna em 'row' representando o valor da chave. O padrão é None.
     - right_key_col (str, opcional): Nome da coluna em 'other' representando o valor da chave. O padrão é None.
     - only_intersections (bool, opcional): Se True, retorna apenas geometrias com área de interseção não nula. O padrão é True.
-    - method (str, opcional): Pode receber os valores de 'intersection' ou 'difference'. O padrão é 'intersection'.
-
+    - method (str, opcional): Pode receber os valores de 'intersection', 'difference' ou 'overlay'. O padrão é 'intersection'.
+                              'overlay' utiliza a função Geopandas.overlay para melhor performance, utilizando 'intersection'.
+    - min_intersection_radius: Largura mínima de uma geometria de interseção para ser considerada. É aplicado um buffer negativo nas geometrias resultantes e
+                               geometrias nulas são desconsideradas. Utilizado apenas no método 'overlay'.
+                                
     Retorna:
     - GeoDataFrame: Um GeoDataFrame contendo as propriedades de interseção, incluindo as geometrias intersectadas, área de interseção e
                     percentual da área de interseção em relação à geometria original de 'row'. Também pode incluir valores da chave de 'gdf' e 'other' se especificados.
@@ -207,6 +260,9 @@ def similarity(
     - Se 'method' for 'intersection', a similaridade é calculada pela interseção entre a geometrias de row e other.
     - Se 'difference', primeiro é calculada a diferença das geometrias de row e other e a similaridade é caculada como 1 - diferença.area/row.geometry.area.
     """
+    if method.lower()=='overlay':
+        return __overlay_similarity(gdf, other, left_key_col, right_key_col, min_intersection_radius)
+
     if isinstance(gdf, GeoSeries) or isinstance(gdf, Series):
         return __row_similarity(gdf, other[[right_key_col, 'geometry']], left_key_col, right_key_col, only_intersections, method)
     
