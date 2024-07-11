@@ -26,6 +26,7 @@ from urllib.request import (
     install_opener,
     urlretrieve,
 )
+from requests import head
 from http.client import HTTPMessage
 from zipfile import ZipFile
 
@@ -38,7 +39,7 @@ class Nivel(Enum):
    DISTRITOS:str='distritos'
    SETORES:str='setores'
 
-GEOSAMPA_DOMAIN = 'http://download.geosampa.prefeitura.sp.gov.br/'
+GEOSAMPA_DOMAIN = 'https://geosampa.prefeitura.sp.gov.br/'
 NAMESPACE = 'PaginasPublicas/'
 ENDPOINT = 'downloadArquivo.aspx'
 
@@ -98,14 +99,10 @@ def __prepare_cache(url:str, file_dir:str, logger:Logger=getLogger()) -> str:
     return file_path
 
 def __get_url_filename(url:str) -> str:
-    opener = build_opener()
-    opener.addheaders = [('Range', '0-0')]
-    install_opener(opener)
+    response = head(url)
 
-    fpath, headers = urlretrieve(url)
-
-    if __get_atachment_filename(headers):
-        return __get_atachment_filename(headers)
+    if __get_atachment_filename(response.headers):
+        return __get_atachment_filename(response.headers)
     
     parsed_url = urlparse(url)
     return basename(parsed_url.path)
